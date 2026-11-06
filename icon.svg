@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="DeepSeek daily cost">
+  <defs>
+    <linearGradient id="dshc-g" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#4d8dff"/>
+      <stop offset="1" stop-color="#1f5fd0"/>
+    </linearGradient>
+  </defs>
+  <rect x="4" y="4" width="56" height="56" rx="14" fill="url(#dshc-g)"/>
+  <g fill="none" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round">
+    <path d="M21 20 L32 32 L43 20"/>
+    <path d="M32 32 L32 46"/>
+    <path d="M22 34 L42 34"/>
+    <path d="M22 41 L42 41"/>
+  </g>
+  <circle cx="46" cy="18" r="7" fill="#0d2b5c" opacity="0.35"/>
+  <g fill="#ffffff">
+    <rect x="43" y="19" width="2.2" height="3" rx="0.6"/>
+    <rect x="46.4" y="15" width="2.2" height="7" rx="0.6"/>
+    <rect x="49.8" y="12" width="2.2" height="10" rx="0.6"/>
+  </g>
+</svg>

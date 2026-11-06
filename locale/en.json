@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "DeepSeek Daily Cost",
+    "description": "Sums today's DeepSeek token spend from local session logs using DeepSeek's official prices, with peak/off-peak and cache-hit rates, and shows it under the composer."
+  }
+}

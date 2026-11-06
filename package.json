@@ -1,0 +1,43 @@
+{
+  "name": "dsh-daily-cost-host",
+  "version": "1.0.0",
+  "private": true,
+  "description": "DeepSeek 每日费用看板：读取本机 session 日志，按 DeepSeek 官方价格（含高峰/空闲时段与缓存命中价）实时累计每天的 token 花费，并在输入框下方显示。",
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./host": "./host.js",
+    "./client": "./client.js",
+    "./host/locale/*.json": "./locale/*.json",
+    "./locale/*.json": "./locale/*.json",
+    "./host/icon": "./icon.svg",
+    "./icon": "./icon.svg",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "host.js",
+    "client.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg",
+    "README.md"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-conversation"
+      ]
+    }
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT"
+}

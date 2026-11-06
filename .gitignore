@@ -1,0 +1,13 @@
+# 依赖与构建产物
+node_modules/
+
+# 运行期数据（费用快照、探针输出）
+dsh-daily-cost/
+*.summary.json
+*.log
+
+# 编辑器 / 系统
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

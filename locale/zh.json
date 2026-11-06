@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "DeepSeek 每日费用",
+    "description": "从本机 session 日志累计每天消耗的 DeepSeek token，按官方价格（含高峰/空闲时段与缓存命中价）折算成金额，显示在输入框下方。"
+  }
+}

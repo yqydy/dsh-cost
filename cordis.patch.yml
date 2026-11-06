@@ -1,0 +1,12 @@
+# dsh-daily-cost —— DeepSeek 每日费用看板（独立插件）
+#
+# 这一行是必需的：dsh-client-modules 只从「以本行为名的包」的 package.json
+# `dsh.client` 声明里发现客户端半边。没有这一行，client.js 永远不会被浏览器加载。
+#
+# 行 id / 行名 / 包名 / 客户端工厂 id 四者保持一致（都是 `dsh-daily-cost-host`）。
+# 名字带 -host 的原因：宿主半边的 js 由 Node 按 URL 缓存、并且包清单（exports）
+# 也按路径缓存，所以「同一个包名换入口文件」在**不重启进程**的情况下不会重新加载；
+# 换成一个从没被解析过的包名才能真正加载到新代码。
+- insert:
+    - id: dsh-daily-cost-host
+      name: 'dsh-daily-cost-host'
