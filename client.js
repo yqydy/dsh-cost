@@ -10,8 +10,14 @@
  * cookie）。宿主用 `fs.watch` 增量折会话日志，这里按固定间隔轮询即可实时反映。
  *
  * 约定：不依赖任何 Harness Client 包（除了由宿主注入的 `slots` 服务本身），
- * 只 `require('react')`；所有样式走 `--dsw-alias-*` 宿主主题令牌；文案按
- * `<html lang>` 在中文/英文之间切换。
+ * 只 `require('react')` / `require('react-dom')`（后者仅用于把浮层 portal 出裁剪容器）；
+ * 所有样式走 `--dsw-alias-*` 宿主主题令牌；文案按 `<html lang>` 在中文/英文之间切换。
+ *
+ * 浮层为什么走 portal：DSH 0.2.2 起，会话标题栏把标题与 actions 包进
+ * `.titleCluster`，该元素带 `overflow: clip` + `mask-image`（标题左端渐隐）。
+ * 祖先的 clip 会连同 `position: absolute` 甚至 `position: fixed` 的后代一起裁掉，
+ * 留在里面的浮层永远不可见（表现就是「点花费没反应」）。因此浮层必须 portal 到
+ * `document.body` 并用 `position: fixed` 按胶囊的 `getBoundingClientRect()` 定位。
  *
  * @module dsh-daily-cost/client
  */
@@ -25,6 +31,15 @@ window.__ModuleLoader__.load({
 
     const React = require('react')
     const h = React.createElement
+    /** react-dom 是客户端模块的平台 seed（宿主直接提供），这里只取 createPortal。 */
+    const ReactDOM = (() => {
+      try {
+        return require('react-dom')
+      } catch {
+        return null
+      }
+    })()
+    const createPortal = typeof ReactDOM?.createPortal === 'function' ? ReactDOM.createPortal : null
 
     /** 取值端点（宿主半边注册的精确 Fetch 路由）。 */
     const ENDPOINT = '/api/dsh-daily-cost/summary'
@@ -34,6 +49,12 @@ window.__ModuleLoader__.load({
     const ENTRY_ID = 'daily-cost'
     /** 轮询间隔：宿主侧已有 watch，这里只是把新结果取回来。 */
     const POLL_MS = 15000
+    /** 浮层层级：高于宿主菜单/浮层（这些通常 portal 到 body 且带 z-index）。 */
+    const PANEL_Z_INDEX = 2147483000
+    /** 浮层与胶囊的间距（px）。 */
+    const GAP_PX = 6
+    /** 浮层最大高度（px），实际还会被视口高度进一步压缩。 */
+    const MAX_HEIGHT_PX = 440
 
     // ---------------------------------------------------------------------
     // 文案
@@ -166,14 +187,15 @@ window.__ModuleLoader__.load({
       },
       dot: { width: '6px', height: '6px', borderRadius: '999px', background: 'var(--dsw-alias-state-business-primary, #2f6fed)', flex: 'none' },
       amount: { fontVariantNumeric: 'tabular-nums', color: 'var(--dsw-alias-label-secondary, #6b6b6b)' },
+      /** 兜底样式：没有 react-dom 时退回「留在槽位里」的旧行为（0.2.2 会被裁剪）。 */
       panel: {
         position: 'absolute',
-        top: 'calc(100% + 6px)',
+        top: `calc(100% + ${GAP_PX}px)`,
         right: '0',
         zIndex: 100,
         boxSizing: 'border-box',
         width: 'min(400px, calc(100vw - 32px))',
-        maxHeight: 'min(440px, calc(100vh - 140px))',
+        maxHeight: `min(${MAX_HEIGHT_PX}px, calc(100vh - 140px))`,
         overflowY: 'auto',
         padding: '10px 12px',
         border: '0.5px solid var(--dsw-alias-border-l1, rgba(0,0,0,.12))',
@@ -242,7 +264,11 @@ window.__ModuleLoader__.load({
       const [error, setError] = React.useState(null)
       const [open, setOpen] = React.useState(false)
       const [busy, setBusy] = React.useState(false)
+      /** 胶囊在视口里的位置（portal 出去的浮层按它定位）。 */
+      const [anchor, setAnchor] = React.useState(null)
       const rootRef = React.useRef(null)
+      const pillRef = React.useRef(null)
+      const panelRef = React.useRef(null)
 
       const t = TEXT[lang] ?? TEXT.zh
 
@@ -298,11 +324,50 @@ window.__ModuleLoader__.load({
       const scale = maxCost(days)
       const pillLabel = error !== null && data === null ? '—' : money(today?.cost ?? 0, currency)
 
+      /** 量一次胶囊位置；浮层用 fixed 定位，所以滚动/缩放后要重新量。 */
+      const measure = React.useCallback(() => {
+        const node = pillRef.current
+        if (node === null || typeof node.getBoundingClientRect !== 'function') return
+        const rect = node.getBoundingClientRect()
+        const viewportWidth = window.innerWidth
+        const viewportHeight = window.innerHeight
+        const panelWidth = Math.min(400, viewportWidth - 32)
+        // 右对齐胶囊，同时把浮层夹在视口内，避免窄窗口下被挤出屏幕。
+        const right = Math.min(
+          Math.max(8, Math.round(viewportWidth - rect.right)),
+          Math.max(8, Math.round(viewportWidth - panelWidth - 8)),
+        )
+        const top = Math.max(8, Math.min(Math.round(rect.bottom + GAP_PX), viewportHeight - 160))
+        setAnchor((previous) => (previous !== null
+          && previous.top === top
+          && previous.right === right
+          ? previous
+          : { top, right }))
+      }, [])
+
+      // 打开时先量位置（layout effect，赶在第一帧绘制前），并在滚动/缩放时保持贴住胶囊。
+      React.useLayoutEffect(() => {
+        if (!open) return undefined
+        measure()
+        const onLayout = () => measure()
+        window.addEventListener('resize', onLayout)
+        window.addEventListener('scroll', onLayout, true)
+        return () => {
+          window.removeEventListener('resize', onLayout)
+          window.removeEventListener('scroll', onLayout, true)
+        }
+      }, [open, measure])
+
       // 点开时：点别处 / 按 Esc 收起。浮层不占布局，所以这层收尾是必要的。
+      // 注意：浮层 portal 到了 body，不在 root 里，判断「外面」时要把浮层也算进来。
       React.useEffect(() => {
         if (!open) return undefined
+        const inside = (node, target) => node !== null && typeof node.contains === 'function' && node.contains(target)
         const onPointerDown = (event) => {
-          if (rootRef.current !== null && !rootRef.current.contains(event.target)) setOpen(false)
+          const target = event.target
+          if (inside(rootRef.current, target)) return
+          if (inside(panelRef.current, target)) return
+          setOpen(false)
         }
         const onKeyDown = (event) => {
           if (event.key === 'Escape') setOpen(false)
@@ -322,12 +387,14 @@ window.__ModuleLoader__.load({
           'button',
           {
             key: 'pill',
+            ref: pillRef,
             type: 'button',
             style: S.pill,
             title: `${t.title} · ${t.today} ${pillLabel}`,
             'aria-expanded': open,
             onClick: () => {
               const next = !open
+              if (next) measure()
               setOpen(next)
               if (next) void load(true)
             },
@@ -476,7 +543,28 @@ window.__ModuleLoader__.load({
           )
         }
 
-        children.push(h('div', { key: 'panel', style: S.panel }, panel))
+        /**
+         * 浮层的两种落点：
+         * - 有 react-dom：portal 到 body + fixed 定位（绕开标题栏的 overflow: clip /
+         *   mask-image，这也是 0.2.2 起唯一能显示的方式）；
+         * - 没有 react-dom：退回旧的内联 absolute（新版本会被裁剪，仅作兜底）。
+         */
+        const panelStyle = createPortal !== null
+          ? {
+              ...S.panel,
+              position: 'fixed',
+              top: `${anchor?.top ?? 0}px`,
+              right: `${anchor?.right ?? 0}px`,
+              left: 'auto',
+              zIndex: PANEL_Z_INDEX,
+              maxHeight: anchor === null
+                ? `min(${MAX_HEIGHT_PX}px, calc(100vh - 140px))`
+                : `min(${MAX_HEIGHT_PX}px, ${Math.max(160, window.innerHeight - anchor.top - 12)}px)`,
+            }
+          : S.panel
+        const panelNode = h('div', { key: 'panel', ref: panelRef, style: panelStyle }, panel)
+        // portal 在 children 数组里也要有 key，否则 React 会告警（第三参数就是 portal 的 key）。
+        children.push(createPortal !== null ? createPortal(panelNode, document.body, 'panel') : panelNode)
       }
 
       return h('div', { style: S.wrap, ref: rootRef }, children)
@@ -498,7 +586,7 @@ window.__ModuleLoader__.load({
      *
      * 槽位选型：`conversation.session.header.actions`（kind=list、scope=session）
      * 就在会话标题与 token 统计那一行，属于顶部区域且不占用输入框下方的布局；
-     * 展开的明细是**绝对定位浮层**，点开也不推动任何东西。
+     * 展开的明细是 **portal 到 body 的 fixed 浮层**，点开也不推动任何东西。
      *
      * 去重：客户端模块图变更时，宿主会（按设计）继续保留**上一批** bundle 以照顾
      * 已经打开的页面，两批若都注册同一个槽位就会出现两个胶囊。这里在文档级记一份

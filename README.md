@@ -59,11 +59,24 @@
 ## 界面
 
 * **胶囊**：会话标题栏右侧 `今日 ¥17.68`。取不到数据时显示 `—`。
-* **点开**：下方弹出浮层（绝对定位，**不占布局、不推动输入框**）：
+* **点开**：下方弹出浮层（portal 到 `document.body` 的 `fixed` 定位层，**不占布局、不推动输入框**）：
   今日金额与调用次数、未命中/命中/输出 token、缓存命中率、高峰/空闲拆分、
   近 7 天柱状（深色=高峰、浅色=空闲）、按模型明细表、价格与时段规则说明。
 * **收起**：点浮层外任意处，或按 `Esc`。
 * 文案跟 `<html lang>` 在中文/英文之间切换。
+
+### 兼容性：为什么浮层要 portal 到 body
+
+DSH 0.2.2 起，会话标题栏把标题和 actions 槽位包进 `.titleCluster`，并加上
+`overflow: clip` + `mask-image`（标题左端渐隐）。这个裁剪会连 `position: absolute`
+甚至 `position: fixed` 的后代一起裁掉 —— 浮层留在标题栏里就永远不可见（表现为
+「点花费没反应」）。所以 `client.js` 用 `require('react-dom').createPortal` 把浮层挂到
+`document.body`，再用胶囊的 `getBoundingClientRect()` 做 `fixed` 定位，滚动/缩放时重测。
+
+* DSH 0.2.1 及更早没有这层裁剪，旧写法也能显示；portal 写法同样兼容它们。
+* `react-dom` 是 Web 端客户端模块的平台 seed（宿主直接注入），不需要额外声明依赖；
+  万一拿不到，`client.js` 会退回旧的内联 `absolute` 行为（不会崩）。
+* DSH 自己的菜单/弹窗也是 portal 到 `document.body`，属于该 UI 的惯例。
 
 ---
 
@@ -146,7 +159,7 @@ node tools/api-probe.cjs
 
 ```powershell
 node test/run.mjs       # 宿主半边：把真实会话日志折一遍，并与一份独立实现逐日比对
-node test/client.mjs    # 浏览器半边：用真 React + react-dom/server 渲染 5 种情形
+node test/client.mjs    # 浏览器半边：用真 React + react-dom/server 渲染 6 种情形（含 portal 出口）
 node test/holidays.mjs  # 节假日计价：同一批日志折两遍（含/不含「今天」为节假日），金额应恰好 ×0.5
 ```
 
@@ -199,6 +212,18 @@ profile   = %DSH_HOME%\profiles\web
 应用      = E:\xiazai\ykdsh\DSH\DSH Desktop Plus.exe
 ```
 
+### 2026-11-09 起的安装坐标（官方 DSH 0.2.2）
+
+```
+DSH_HOME  = C:\Users\20862\.dsh
+profile   = desktop
+插件目录  = %DSH_HOME%\profiles\desktop\node_modules\dsh-daily-cost-host
+应用      = E:\xiazai\dsh\DeepSeek Harness.exe
+```
+
+官方 DSH 的 Web UI 由宿主自己起在 `127.0.0.1:<随机端口>/?token=…`（裸地址 401）；
+`DSH_HOME` 换掉后 `extraSessionRoots` / `test/run.mjs` 的默认根也记得跟着换。
+
 手工安装三步（不需要 pnpm，Plus 自带的 harness 会在线重新组合）：
 
 1. 复制 `index.js` `host.js` `client.js` `package.json` `cordis.patch.yml` `icon.svg`
@@ -226,13 +251,20 @@ profile   = %DSH_HOME%\profiles\web
 
 | 改了什么 | 怎么生效 |
 |---|---|
-| `client.js`（界面） | 复制过去 → 跑 `node tools/recompose.cjs <profile>/cordis.patch.yml` → 刷新页面 |
+| `client.js`（界面） | 复制过去 → 宿主每 500ms 轮询 client bundle，变化走 `/plugins/events` 自动热重载；没生效就刷新页面 |
 | `locale\*.json` / `icon.svg` | 同上（插件列表显示） |
 | `host.js`（宿主逻辑） | **需要重启应用**：Node 的 ES 模块缓存按 URL 生效，进程内无法换代码 |
 | 配置（`config`） | 直接存盘，HMR 会重挂该行 |
 
-> `node_modules` 里的文件不在 HMR 监听范围内；`tools/recompose.cjs` 通过在 profile patch
-> 末尾维护**一行时间戳注释**来触发重新组合（内容一变就重载），顺便清掉历史遗留注释。
+> 如果宿主没有自动重新组合 profile（插件没被登记进 boot 表），再跑
+> `node tools/recompose.cjs <profile>/cordis.patch.yml` 触发一次。
+
+> 两种情况分开看：
+> * **插件已装好，只改 `client.js`**：`dsh-client-hmr` 会按 500ms 轮询每个客户端 bundle 的
+>   mtime/ctime/size，变化后通过 `/plugins/events` 推送并热重载该模块，**不需要** recompose；
+> * **改 profile 的 `cordis.patch.yml` / 新登记插件**：profile 组合不会自己重跑，需要
+>   `tools/recompose.cjs` 在 profile patch 末尾维护**一行时间戳注释**来触发重新组合，
+>   顺便清掉历史遗留注释。
 
 ### 为什么包名是 `dsh-daily-cost-host`
 

@@ -1,6 +1,6 @@
 {
   "name": "dsh-daily-cost-host",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "description": "DeepSeek 每日费用看板：读取本机 session 日志，按 DeepSeek 官方价格（含高峰/空闲时段与缓存命中价）实时累计每天的 token 花费，并在输入框下方显示。",
   "type": "module",

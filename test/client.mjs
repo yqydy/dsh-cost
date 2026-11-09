@@ -4,7 +4,8 @@
  * 1. 在假 `window.__ModuleLoader__` 里执行 client.js，取出模块工厂；
  * 2. 用真 React（createElement）+ 假 hooks（把 useState 的初值换成我们给的状态）
  *    调 `apply()` 拿到注册进 dock 槽位的组件；
- * 3. 用真 react-dom/server 渲染成 HTML，检查两种语言、有无数据、出错三种情形下
+ * 3. 用真 react-dom/server 渲染成 HTML，检查两种语言、有无数据、出错、以及
+ *    portal 出口（DSH 0.2.2 标题栏 overflow:clip 后浮层必须挂到 body）等情形下
  *    都能渲染出预期内容且不抛异常。
  *
  *   node test/client.mjs
@@ -32,7 +33,7 @@ const ok = (condition, message) => {
 }
 
 /** 用给定状态渲染一次，返回 HTML 与抛出的异常。 */
-function render(states) {
+function render(states, options = {}) {
   const captured = []
   const windowStub = { __ModuleLoader__: { load: (entry) => captured.push(entry) } }
   // eslint-disable-next-line no-new-func
@@ -61,9 +62,14 @@ function render(states) {
     useEffect: () => {},
     useCallback: (fn) => fn,
   }
+  /** 假 react-dom：portal 在 SSR 里不存在，这里换成一个可断言的 div。 */
+  const fakeReactDOM = {
+    createPortal: (node, container, key) => realReact.createElement('div', { 'data-testid': 'portal-root', key }, node),
+  }
 
   const exports = entry.factory((name) => {
     if (name === 'react') return fakeReact
+    if (name === 'react-dom' && options.portal === true) return fakeReactDOM
     throw new Error(`client.js 依赖了未声明的模块：${name}`)
   })
   if (typeof exports.apply !== 'function') throw new Error('模块没有导出 apply')
@@ -165,6 +171,16 @@ console.log('\n--- 情形 5：空语言回退 ---')
   ok(html.length > 0, '空语言渲染失败')
 }
 
-if (failures === 0) console.log('\nOK：浏览器半边在 5 种情形下都正常渲染')
+console.log('\n--- 情形 6：portal 出口（DSH 0.2.2 标题栏 overflow:clip） ---')
+{
+  const html = render({ lang: 'zh-CN', values: ['zh', SAMPLE, null, true, false] }, { portal: true })
+  ok(html.includes('data-testid="portal-root"'), '浮层没有走 portal 出口（仍留在会被裁剪的标题栏里）')
+  ok(html.includes('position:fixed'), 'portal 浮层不是 fixed 定位，无法贴住胶囊')
+  ok(html.includes('近 7 天'), 'portal 模式没有渲染面板内容')
+  ok(html.includes('¥11.66'), 'portal 模式缺少今日金额')
+  console.log(html.slice(0, 240).replace(/\s+/g, ' '))
+}
+
+if (failures === 0) console.log('\nOK：浏览器半边在 6 种情形下都正常渲染')
 else console.error(`\n${failures} 项失败`)
 process.exit(failures === 0 ? 0 : 1)
